@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "Fetches Jupiter prices, saves to DB, and broadcasts via WebSocket",
   "type": "module",
-  "main": "api/server.js",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node api/server.js"
   },
   "engines": {
     "node": "18.x"
