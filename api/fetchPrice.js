@@ -15,7 +15,7 @@
         if (conn == null) {
             console.log('Creating new DB connection...');
             if (!MONGO_URI) {
-                throw new Error('MONGO_URI is not defined in environment variables.');
+                throw new Error('MONGO_URI is not Defined in environment variables.');
             }
             conn = mongoose.connect(MONGO_URI, {
                 serverSelectionTimeoutMS: 5000, // Shorten timeout for serverless
