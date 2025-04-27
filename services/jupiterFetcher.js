@@ -14,8 +14,12 @@ const Price = mongoose.models.Price || mongoose.model('Price', PriceSchema);
 
 // --- Configuration ---
 const JLP_TOKEN_ID = process.env.JLP_TOKEN_ID || '27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4';
-// This line is currently incorrect
-const API_URL = `https://quote-api.jup.ag/v6/price?ids=${JLP_TOKEN_ID}`;
+console.log(`Using JLP_TOKEN_ID: ${JLP_TOKEN_ID}`); // <-- ADD LOG
+
+const API_URL = `https://lite-api.jup.ag/price/v2?ids=${JLP_TOKEN_ID}`
+console.log(`Constructed API_URL: ${API_URL}`); // <-- ADD LOG
+
+
 const FAST_FETCH_INTERVAL = parseInt(process.env.FAST_FETCH_INTERVAL_MS || '1000', 10); // Default 1 second
 const DB_SAVE_INTERVAL = parseInt(process.env.DB_SAVE_INTERVAL_MS || '10000', 10); // Default 10 seconds
 
