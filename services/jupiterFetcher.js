@@ -14,8 +14,8 @@ const Price = mongoose.models.Price || mongoose.model('Price', PriceSchema);
 
 // --- Configuration ---
 const JLP_TOKEN_ID = process.env.JLP_TOKEN_ID || '27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4';
-// services/jupiterFetcher.js line ~14 (adjust if needed)
-const API_URL = `https://quote-api.jup.ag/v6/price?ids=${JLP_TOKEN_ID}`; // <-- Changed API version to v6
+// This line is currently incorrect
+const API_URL = `https://quote-api.jup.ag/v6/price?ids=${JLP_TOKEN_ID}`;
 const FAST_FETCH_INTERVAL = parseInt(process.env.FAST_FETCH_INTERVAL_MS || '1000', 10); // Default 1 second
 const DB_SAVE_INTERVAL = parseInt(process.env.DB_SAVE_INTERVAL_MS || '10000', 10); // Default 10 seconds
 
