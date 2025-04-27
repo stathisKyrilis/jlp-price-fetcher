@@ -6,7 +6,7 @@
         type: String,
         required: true,
         enum: ['JLP', 'SOL', 'USDC'],
-        index: true
+        //index: true
       },
       price: {
         type: Number,
