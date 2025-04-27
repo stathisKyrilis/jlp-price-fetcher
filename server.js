@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import url from 'url';
+import dotenv from 'dotenv';
 
 import connectDB from './config/db.js';
 import { fetchPriceData, startDbSaving, stopDbSaving } from './services/jupiterFetcher.js';
