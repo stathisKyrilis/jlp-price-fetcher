@@ -1,0 +1,19 @@
+    # .github/workflows/jlp-price-fetcher-cron.yml
+    name: Fetch JLP Price Periodically
+
+    on:
+      schedule:
+        # Runs every 15 minutes (adjust as needed)
+        - cron: '*/15 * * * *'
+      workflow_dispatch: # Allows manual triggering
+
+    jobs:
+      fetch_price:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Trigger Vercel Fetch Function
+            run: |
+              curl --request GET \
+              --url '${{ secrets.VERCEL_FETCH_URL }}' \
+              --header 'Authorization: Bearer ${{ secrets.VERCEL_CRON_SECRET }}' \
+              --fail
