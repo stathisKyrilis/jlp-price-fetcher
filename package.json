@@ -2,11 +2,12 @@
   "name": "price-fetcher",
   "version": "1.0.0",
   "description": "Fetches JLP prices for SolMate",
-  "main": "api/getPrices.js",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "vercel dev"
+    "start": "node server.js"
   },
+  
   "engines": {
     "node": "18.x"
   },
