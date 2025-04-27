@@ -5,7 +5,8 @@
       symbol: {
         type: String,
         required: true,
-        enum: ['JLP'], // Start with JLP, can expand later
+        enum: ['JLP', 'SOL', 'USDC'],
+        index: true
       },
       price: {
         type: Number,
@@ -22,5 +23,15 @@
       }
     });
 
+    // Explicitly create the TTL index on the 'timestamp' field
+    // Expires documents 6 hours (21600 seconds) after their timestamp value
+    PriceSchema.index({ timestamp: 1 }, { expireAfterSeconds: 21600 });
+
+    // --- Compound Index for Historical Aggregation ---
+    // Useful for the historical endpoint filtering by symbol and time range
+    PriceSchema.index({ symbol: 1, timestamp: -1 });
+
     // Ensure model is not re-compiled if already exists (important for serverless)
-    export default mongoose.models.Price || mongoose.model('Price', PriceSchema); // Use export default
+    const Price = mongoose.models.Price || mongoose.model('Price', PriceSchema); // Use const
+
+    export default Price; // Or module.exports if using CommonJS

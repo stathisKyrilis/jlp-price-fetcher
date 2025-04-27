@@ -1,134 +1,141 @@
 // services/jupiterFetcher.js
 import fetch from 'node-fetch'; // Use import if package.json has "type": "module", otherwise use require('node-fetch')
 import mongoose from 'mongoose'; // Use import if package.json has "type": "module", otherwise use require('mongoose')
+import Price from '../models/Price.js'; // Adjust path if needed
 
 // Define the Price model directly here or require it if it's in a separate models file
 const PriceSchema = new mongoose.Schema({
-  symbol: { type: String, required: true, enum: ['JLP'] },
+  symbol: {
+    type: String,
+    required: true,
+    enum: ['JLP', 'SOL', 'USDC'],
+    index: true
+  },
   price: { type: Number, required: true },
   timestamp: { type: Date, default: Date.now, index: true },
   tokenId: { type: String, required: true }
 });
-const Price = mongoose.models.Price || mongoose.model('Price', PriceSchema);
+const PriceModel = mongoose.models.Price || mongoose.model('Price', PriceSchema);
 
 
 // --- Configuration ---
-const JLP_TOKEN_ID = process.env.JLP_TOKEN_ID || '27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4';
-console.log(`Using JLP_TOKEN_ID: ${JLP_TOKEN_ID}`); // <-- ADD LOG
+// Define all token IDs we want to fetch
+const TOKEN_IDS = {
+  JLP: process.env.JLP_TOKEN_ID || '27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4',
+  SOL: 'So11111111111111111111111111111111111111112',
+  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+};
+// --- Log the Token IDs being used ---
+console.log(`Using TOKEN_IDS:`, TOKEN_IDS);
 
-const API_URL = `https://lite-api.jup.ag/price/v2?ids=${JLP_TOKEN_ID}`
-console.log(`Constructed API_URL: ${API_URL}`); // <-- ADD LOG
+// Construct the comma-separated string for the API query
+const commaSeparatedIds = Object.values(TOKEN_IDS).join(',');
+const API_URL_BASE = `https://lite-api.jup.ag/price/v2?ids=`;
 
-
-const FAST_FETCH_INTERVAL = parseInt(process.env.FAST_FETCH_INTERVAL_MS || '1000', 10); // Default 1 second
-const DB_SAVE_INTERVAL = parseInt(process.env.DB_SAVE_INTERVAL_MS || '10000', 10); // Default 10 seconds
+const DB_SAVE_INTERVAL = parseInt(process.env.DB_SAVE_INTERVAL_MS || '5000', 10);
 
 // --- State ---
 let priceBatch = []; // Array to hold prices collected between saves
-let fetchIntervalId = null;
 let saveIntervalId = null;
 
 // --- Functions ---
 
 // Function to fetch price and add to batch
-const fetchAndBatchPrice = async () => {
+const fetchPriceData = async () => {
+  const currentApiUrl = `${API_URL_BASE}${commaSeparatedIds}`;
+  const fetchedPrices = []; // Store prices fetched in this specific call
+
   try {
-    const response = await fetch(API_URL);
+    const response = await fetch(currentApiUrl, { timeout: 5000 }); // Add timeout
+
     if (!response.ok) {
-       console.warn(`[${new Date().toISOString()}] API request failed with status ${response.status}`);
-       return;
+      const responseText = await response.text(); // Read body for debugging
+      console.warn(`[${new Date().toISOString()}] API request failed! Status: ${response.status}, URL: ${currentApiUrl}, Body: ${responseText}`);
+      return null; // Indicate fetch failure
     }
+
     const data = await response.json();
-    const timestamp = new Date(); // Capture timestamp when fetched
+    const timestamp = new Date();
 
-    if (data?.data?.[JLP_TOKEN_ID]) {
-      const jlpPriceData = data.data[JLP_TOKEN_ID];
-      // V4 API structure might differ slightly, adjust if needed
-      // Example: Assume price is directly available
-      const price = Number(jlpPriceData.price);
+    for (const symbol in TOKEN_IDS) {
+        const tokenId = TOKEN_IDS[symbol];
+        if (data?.data?.[tokenId]) {
+            const tokenPriceData = data.data[tokenId];
+            const price = Number(tokenPriceData.price);
 
-      if (!isNaN(price)) {
-        priceBatch.push({
-          symbol: 'JLP',
-          price: price,
-          tokenId: JLP_TOKEN_ID,
-          timestamp: timestamp
-        });
-      } else {
-        console.warn(`[${timestamp.toISOString()}] Invalid price number received for JLP:`, jlpPriceData.price);
-      }
-    } else {
-      console.warn(`[${new Date().toISOString()}] JLP price data structure not found as expected in API response.`);
+            if (!isNaN(price)) {
+                const priceData = {
+                    symbol: symbol,
+                    price: price,
+                    tokenId: tokenId,
+                    timestamp: timestamp
+                };
+                fetchedPrices.push(priceData); // Add to current fetch results
+                priceBatch.push(priceData); // Add to batch for DB saving
+            } else {
+                console.warn(`[${timestamp.toISOString()}] Invalid price for ${symbol} (${tokenId}):`, tokenPriceData.price);
+            }
+        } else {
+            console.warn(`[${timestamp.toISOString()}] Price data for ${symbol} (${tokenId}) not found in API response.`);
+        }
     }
+    // Return only the prices fetched *this* time
+    return fetchedPrices.length > 0 ? fetchedPrices : null;
+
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error fetching JLP price:`, error.message);
+    // Handle fetch-specific errors (e.g., network issues, timeouts)
+    if (error.name === 'AbortError' || error.code === 'ETIMEOUT' || error.code === 'ECONNRESET') {
+        console.warn(`[${new Date().toISOString()}] Fetch timeout or network error for ${currentApiUrl}: ${error.message}`);
+    } else {
+        console.error(`[${new Date().toISOString()}] Error during fetch operation:`, error);
+    }
+    return null; // Indicate fetch failure
   }
 };
 
 // Function to save the current batch to MongoDB
 const saveBatchToDB = async () => {
-    if (priceBatch.length === 0) {
-        return; // Nothing to save
+    if (priceBatch.length === 0) { return; }
+    if (mongoose.connection.readyState !== 1) {
+         console.warn(`[${new Date().toISOString()}] DB connection not ready. Skipping save cycle.`);
+         // Keep batch for next attempt
+         return;
     }
 
     const batchToSave = [...priceBatch];
-    priceBatch = []; // Clear the batch immediately
+    priceBatch = []; // Clear original batch *before* async operation
 
     console.log(`[${new Date().toISOString()}] Attempting to save batch of ${batchToSave.length} prices to DB...`);
-
     try {
-        // Ensure DB connection is ready before inserting
-        if (mongoose.connection.readyState !== 1) {
-             console.warn(`[${new Date().toISOString()}] DB connection not ready. Skipping save cycle.`);
-             // Optionally put batch back if needed, but might lead to memory issues
-             // priceBatch = [...batchToSave, ...priceBatch];
-             return;
-        }
-        const result = await Price.insertMany(batchToSave, { ordered: false });
+        const result = await PriceModel.insertMany(batchToSave, { ordered: false });
         console.log(`[${new Date().toISOString()}] Successfully saved ${result.length} prices.`);
     } catch (error) {
         console.error(`[${new Date().toISOString()}] Error saving price batch to DB:`, error.message);
-        if (error.writeErrors) {
-             console.error("DB Write Errors details:", error.writeErrors.map(e => e.errmsg));
-        }
-        // Decide on error handling: retry, log failed data, etc.
+        // Optional: Add failed items back to the main batch? Careful about infinite loops.
+        // if (error.writeErrors) {
+        //     console.error("DB Write Errors details:", error.writeErrors.map(e => e.errmsg));
+        // }
     }
 };
 
-// --- Control ---
-
-const startFetching = () => {
-  if (fetchIntervalId || saveIntervalId) {
-    console.log('Fetcher already running.');
-    return;
-  }
-  console.log(`Starting JLP price fetching every ${FAST_FETCH_INTERVAL / 1000} seconds.`);
-  console.log(`Starting DB save every ${DB_SAVE_INTERVAL / 1000} seconds.`);
-
-  fetchIntervalId = setInterval(fetchAndBatchPrice, FAST_FETCH_INTERVAL);
+// --- Start/Stop DB Saving Interval ---
+const startDbSaving = () => {
+  if (saveIntervalId) return; // Already running
+  console.log(`Starting DB save interval: every ${DB_SAVE_INTERVAL / 1000} seconds.`);
   saveIntervalId = setInterval(saveBatchToDB, DB_SAVE_INTERVAL);
-
-  // Fetch immediately first time?
-  fetchAndBatchPrice();
 };
 
-const stopFetching = () => {
-  if (fetchIntervalId) {
-    clearInterval(fetchIntervalId);
-    fetchIntervalId = null;
-    console.log('Stopped JLP price fetching interval.');
-  }
-   if (saveIntervalId) {
+const stopDbSaving = async () => {
+  if (saveIntervalId) {
     clearInterval(saveIntervalId);
     saveIntervalId = null;
     console.log('Stopped DB save interval.');
-    // Attempt to save any remaining items in the batch
     console.log('Performing final batch save on stop...');
-    saveBatchToDB(); // Might need await if called before process exit
+    await saveBatchToDB(); // Attempt final save
   }
 };
 
 // Export the control functions
 // Use module.exports if not using ES Modules (no "type":"module" in package.json)
-export { startFetching, stopFetching };
+export { fetchPriceData, startDbSaving, stopDbSaving };
 // module.exports = { startFetching, stopFetching }; // Use this line instead if using require
