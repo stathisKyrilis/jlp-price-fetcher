@@ -14,7 +14,8 @@ const Price = mongoose.models.Price || mongoose.model('Price', PriceSchema);
 
 // --- Configuration ---
 const JLP_TOKEN_ID = process.env.JLP_TOKEN_ID || '27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4';
-const API_URL = `https://price.jup.ag/v4/price?ids=${JLP_TOKEN_ID}`; // Use v4 endpoint - check Jupiter docs if needed
+// services/jupiterFetcher.js line ~14 (adjust line number if needed)
+const API_URL = `https://quote-api.jup.ag/v4/price?ids=${JLP_TOKEN_ID}`; // <-- Changed hostname
 const FAST_FETCH_INTERVAL = parseInt(process.env.FAST_FETCH_INTERVAL_MS || '1000', 10); // Default 1 second
 const DB_SAVE_INTERVAL = parseInt(process.env.DB_SAVE_INTERVAL_MS || '10000', 10); // Default 10 seconds
 
