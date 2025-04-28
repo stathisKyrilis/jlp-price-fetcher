@@ -29,7 +29,7 @@
 
     // --- Compound Index for Historical Aggregation ---
     // Useful for the historical endpoint filtering by symbol and time range
-    PriceSchema.index({ symbol: 1, timestamp: -1 });
+    //PriceSchema.index({ symbol: 1, timestamp: -1 });
 
     // Ensure model is not re-compiled if already exists (important for serverless)
     const Price = mongoose.models.Price || mongoose.model('Price', PriceSchema); // Use const
