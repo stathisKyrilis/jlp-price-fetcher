@@ -8,7 +8,7 @@ import url from 'url';
 import connectDB from './config/db.js';
 import { fetchPriceData, startDbSaving, stopDbSaving } from './services/jupiterFetcher.js';
 import Price from './models/Price.js'; // Import model for API endpoint
-const express = require('express');
+import express from 'express'; // Import express for API endpoint
 
 dotenv.config();
 
