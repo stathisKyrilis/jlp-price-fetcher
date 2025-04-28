@@ -8,6 +8,7 @@ import url from 'url';
 import connectDB from './config/db.js';
 import { fetchPriceData, startDbSaving, stopDbSaving } from './services/jupiterFetcher.js';
 import Price from './models/Price.js'; // Import model for API endpoint
+const express = require('express');
 
 dotenv.config();
 
@@ -178,6 +179,44 @@ server.on('request', (req, res) => {
         }
     }); // End corsMiddleware callback
 });
+
+
+const app = express();
+
+// ... other middleware (app.use(cors()), app.use(express.json()), etc.) ...
+
+// ===> CHECK FOR THIS ROUTE <===
+app.get('/prices/historical', async (req, res) => {
+  try {
+    // Fetch the last N hours of JLP prices from MongoDB
+    // (Adjust the time range and filtering as needed)
+    const hours = 6; // Example: 6 hours
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    // Find only JLP prices within the timeframe, sort by timestamp descending
+    const historicalData = await Price.find({
+      symbol: 'JLP', // Make sure you only save JLP if that's intended
+      timestamp: { $gte: since }
+    })
+    .sort({ timestamp: -1 }) // Get latest first if needed, or sort ascending
+    .limit(1000); // Add a limit just in case
+
+    // Format for the frontend if necessary (or send raw data)
+    // Example formatting (adapt if your frontend expects a different structure):
+    const formattedData = [{
+        symbol: 'JLP',
+        history: historicalData.map(p => ({ timestamp: p.timestamp, price: p.price }))
+    }];
+
+
+    res.json(formattedData); // Send the data back as JSON
+
+  } catch (error) {
+    console.error("Error fetching historical prices:", error);
+    res.status(500).json({ message: "Error fetching historical price data" });
+  }
+});
+// ===> END CHECK <===
 
 // --- Create WebSocket Server (attach to HTTP server) ---
 const wss = new WebSocketServer({ server }); // Attach WS server to the HTTP server
