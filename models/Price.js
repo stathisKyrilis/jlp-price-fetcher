@@ -15,7 +15,7 @@
       timestamp: {
         type: Date,
         default: Date.now,
-        index: true, // Add index for faster time-based queries
+        //index: true, // Add index for faster time-based queries
       },
       tokenId: { // Store the token ID used for fetching
         type: String,
