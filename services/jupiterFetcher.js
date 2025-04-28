@@ -71,7 +71,10 @@ const fetchPriceData = async () => {
                     timestamp: timestamp
                 };
                 fetchedPrices.push(priceData); // Add to current fetch results
-                priceBatch.push(priceData); // Add to batch for DB saving
+                // Only add JLP prices to the batch meant for DB saving
+                if (symbol === 'JLP') { // <-- Add this condition
+                  priceBatch.push(priceData);
+               } // <-- End condition
             } else {
                 console.warn(`[${timestamp.toISOString()}] Invalid price for ${symbol} (${tokenId}):`, tokenPriceData.price);
             }
