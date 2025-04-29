@@ -280,6 +280,7 @@ const runFetcher = async () => {
     if (fetchedPrices && fetchedPrices.length > 0) {
       // Broadcast only the newly fetched prices
       broadcast({ type: 'PRICE_UPDATE', payload: fetchedPrices });
+      console
     }
   } catch (error) {
       // Catch any unexpected error from fetchPriceData itself (should be handled within, but belt-and-suspenders)
