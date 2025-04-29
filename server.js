@@ -235,7 +235,7 @@ app.get('/prices/historical', async (req, res) => {
       timestamp: { $gte: since }
     })
     .sort({ timestamp: -1 }) // Get latest first if needed, or sort ascending
-    .limit(1000); // Add a limit just in case
+    .limit(21600); // Add a limit just in case
 
     // Format for the frontend if necessary (or send raw data)
     // Example formatting (adapt if your frontend expects a different structure):
