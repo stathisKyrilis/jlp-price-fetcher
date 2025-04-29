@@ -175,7 +175,7 @@ server.on('request', (req, res) => {
                     timestamp: { $gte: since }
                 })
                 .sort({ timestamp: 1 }) // Sort ascending (oldest first)
-                .limit(1000); // Limit results
+                .limit(21600); // Limit results
 
                 // Format exactly as the frontend expects (array of objects with 'history' key)
                  const formattedData = [{
