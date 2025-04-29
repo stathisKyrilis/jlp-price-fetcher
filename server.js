@@ -8,7 +8,7 @@ import url from 'url';
 import connectDB from './config/db.js';
 import { fetchPriceData, startDbSaving, stopDbSaving } from './services/jupiterFetcher.js';
 import Price from './models/Price.js'; // Import model for API endpoint
-import express from 'express'; // Import express for API endpoint
+import express from 'express';
 
 dotenv.config();
 
@@ -163,6 +163,42 @@ server.on('request', (req, res) => {
                 res.end(JSON.stringify({ message: 'Internal Server Error' }));
             }
         }
+        // ===> ADD THIS 'else if' BLOCK <===
+        else if (parsedUrl.pathname === '/prices/historical' && req.method === 'GET') {
+            try {
+                const hours = 6; // Fetch last 6 hours
+                const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+                // Fetch ONLY JLP prices within the timeframe, sorted
+                const historicalData = await Price.find({
+                    symbol: 'JLP', // Assuming you only save JLP now
+                    timestamp: { $gte: since }
+                })
+                .sort({ timestamp: 1 }) // Sort ascending (oldest first)
+                .limit(1000); // Limit results
+
+                // Format exactly as the frontend expects (array of objects with 'history' key)
+                 const formattedData = [{
+                    symbol: 'JLP',
+                    // Map to the { timestamp: ISODateString, price: number } format
+                    history: historicalData.map(p => ({
+                        timestamp: p.timestamp, // Keep as Date object or convert to ISO string
+                        price: p.price
+                    }))
+                }];
+
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(formattedData)); // Send the formatted data
+
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}] Error fetching historical prices (/prices/historical):`, error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'Internal Server Error fetching historical price data' }));
+            }
+       }
+       // ===> END ADDED BLOCK <===
+
         // --- Health Check Endpoint ---
         else if (parsedUrl.pathname === '/health' && req.method === 'GET') {
             res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -280,7 +316,6 @@ const runFetcher = async () => {
     if (fetchedPrices && fetchedPrices.length > 0) {
       // Broadcast only the newly fetched prices
       broadcast({ type: 'PRICE_UPDATE', payload: fetchedPrices });
-      console
     }
   } catch (error) {
       // Catch any unexpected error from fetchPriceData itself (should be handled within, but belt-and-suspenders)
