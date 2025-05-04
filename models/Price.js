@@ -25,7 +25,7 @@
 
     // Explicitly create the TTL index on the 'timestamp' field
     // Expires documents 6 hours (21600 seconds) after their timestamp value
-    PriceSchema.index({ timestamp: 1 }, { expireAfterSeconds: 21600 });
+    PriceSchema.index({ timestamp: 1 }, { expireAfterSeconds: 43200 });
 
     // --- Compound Index for Historical Aggregation ---
     // Useful for the historical endpoint filtering by symbol and time range

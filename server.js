@@ -175,7 +175,7 @@ server.on('request', (req, res) => {
                     timestamp: { $gte: since }
                 })
                 .sort({ timestamp: 1 }) // Sort ascending (oldest first)
-                .limit(21600); // Limit results
+                .limit(43200); // Limit results
 
                 // Format exactly as the frontend expects (array of objects with 'history' key)
                  const formattedData = [{
@@ -235,7 +235,7 @@ app.get('/prices/historical', async (req, res) => {
       timestamp: { $gte: since }
     })
     .sort({ timestamp: -1 }) // Get latest first if needed, or sort ascending
-    .limit(21600); // Add a limit just in case
+    .limit(43200); // Add a limit just in case
 
     // Format for the frontend if necessary (or send raw data)
     // Example formatting (adapt if your frontend expects a different structure):
