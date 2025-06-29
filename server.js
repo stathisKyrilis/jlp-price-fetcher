@@ -276,33 +276,38 @@ function broadcast(data) {
 }
 
 // --- Orchestrate Fetching and Broadcasting ---
-let fetchIntervalId = null;
+let fetchTimeoutId = null; // Use a different name to be clear it's for a timeout chain
 
-const runFetcher = async () => {
+const runFetcherLoop = async () => {
   try {
     const fetchedPrices = await fetchPriceData();
     if (fetchedPrices && fetchedPrices.length > 0) {
       broadcast({ type: 'PRICE_UPDATE', payload: fetchedPrices });
     }
   } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in runFetcher loop:`, error);
+      console.error(`[${new Date().toISOString()}] Error in runFetcherLoop:`, error);
+  } finally {
+    // Schedule the next run only after the current one has finished
+    if (fetchTimeoutId) { // Ensure the loop is still supposed to be running
+        fetchTimeoutId = setTimeout(runFetcherLoop, FETCH_INTERVAL);
+    }
   }
 };
 
 const startFetching = () => {
-    if (fetchIntervalId) return; // Already running
+    if (fetchTimeoutId) return; // Already running
     console.log(`Starting price fetching & broadcasting every ${FETCH_INTERVAL / 1000} seconds.`);
-    startDbSaving(); // Start the separate DB save interval
-    fetchIntervalId = setInterval(runFetcher, FETCH_INTERVAL);
+    startDbSaving();
+    fetchTimeoutId = setTimeout(runFetcherLoop, 0); // Start the loop immediately
 };
 
 const stopFetching = async () => {
-    if (fetchIntervalId) {
-        clearInterval(fetchIntervalId);
-        fetchIntervalId = null;
+    if (fetchTimeoutId) {
+        clearTimeout(fetchTimeoutId);
+        fetchTimeoutId = null;
         console.log('Stopped price fetching & broadcasting.');
     }
-    await stopDbSaving(); // Stop DB saving and perform final save
+    await stopDbSaving();
     // Close WebSocket server connections gracefully
     console.log('Closing WebSocket connections...');
     wss.clients.forEach(client => client.close());
@@ -314,12 +319,7 @@ const stopFetching = async () => {
 
 // --- START ALL PROCESSES ---
 // This block defines the main loop and starts it immediately.
-(() => {
-    if (fetchIntervalId) return; // Prevent multiple initializations
-    console.log(`Starting price fetching & broadcasting every ${FETCH_INTERVAL / 1000} seconds.`);
-    startDbSaving(); // Start the DB saving intervals
-    fetchIntervalId = setInterval(runFetcher, FETCH_INTERVAL);
-})();
+startFetching();
 
 // --- Start the HTTP Server ---
 server.listen(PORT, () => {
