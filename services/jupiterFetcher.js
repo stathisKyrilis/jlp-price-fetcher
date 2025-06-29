@@ -2,6 +2,7 @@
 import fetch from 'node-fetch'; // Use import if package.json has "type": "module", otherwise use require('node-fetch')
 import mongoose from 'mongoose'; // Use import if package.json has "type": "module", otherwise use require('mongoose')
 import Price from '../models/Price.js'; // Adjust path if needed
+import MinutePrice from '../models/MinutePrice.js'; // <<< IMPORT NEW COMBINED MODEL
 
 // Define the Price model directly here or require it if it's in a separate models file
 const PriceSchema = new mongoose.Schema({
@@ -37,6 +38,9 @@ const DB_SAVE_INTERVAL = parseInt(process.env.DB_SAVE_INTERVAL_MS || '5000', 10)
 // --- State ---
 let priceBatch = []; // Array to hold prices collected between saves
 let saveIntervalId = null;
+let latestJlpPrice = null; // Store the latest JLP price
+let latestSolPrice = null; // Store the latest SOL price
+let minuteSaveIntervalId = null; // ID for the new 1-minute interval
 
 // --- Functions ---
 
@@ -70,11 +74,19 @@ const fetchPriceData = async () => {
                     tokenId: tokenId,
                     timestamp: timestamp
                 };
-                fetchedPrices.push(priceData); // Add to current fetch results
-                // Only add JLP prices to the batch meant for DB saving
-                if (symbol === 'JLP') { // <-- Add this condition
+                fetchedPrices.push(priceData);
+
+                // Update latest prices for the 1-minute save
+                if (symbol === 'JLP') {
+                    latestJlpPrice = price;
+                } else if (symbol === 'SOL') {
+                    latestSolPrice = price;
+                }
+
+                // Only add JLP prices to the high-frequency batch
+                if (symbol === 'JLP') {
                   priceBatch.push(priceData);
-               } // <-- End condition
+                }
             } else {
                 console.warn(`[${timestamp.toISOString()}] Invalid price for ${symbol} (${tokenId}):`, tokenPriceData.price);
             }
@@ -94,6 +106,30 @@ const fetchPriceData = async () => {
     }
     return null; // Indicate fetch failure
   }
+};
+
+// --- NEW: Function to save the latest JLP and SOL prices every minute ---
+const saveMinutePrices = async () => {
+    if (latestJlpPrice === null || latestSolPrice === null) {
+        console.warn(`[${new Date().toISOString()}] Missing JLP or SOL price for 1-minute save.`);
+        return;
+    }
+    if (mongoose.connection.readyState !== 1) {
+        console.warn(`[${new Date().toISOString()}] DB connection not ready. Skipping 1-minute price save.`);
+        return;
+    }
+
+    console.log(`[${new Date().toISOString()}] Saving minute prices: JLP=${latestJlpPrice}, SOL=${latestSolPrice}`);
+    try {
+        const newMinutePrice = new MinutePrice({
+            jlpPrice: latestJlpPrice,
+            solPrice: latestSolPrice,
+        });
+        await newMinutePrice.save();
+        console.log(`[${new Date().toISOString()}] Successfully saved 1-minute prices.`);
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error saving 1-minute prices to DB:`, error.message);
+    }
 };
 
 // Function to save the current batch to MongoDB
@@ -123,9 +159,14 @@ const saveBatchToDB = async () => {
 
 // --- Start/Stop DB Saving Interval ---
 const startDbSaving = () => {
-  if (saveIntervalId) return; // Already running
+  if (saveIntervalId) return; // Already running for 5s batch
   console.log(`Starting DB save interval: every ${DB_SAVE_INTERVAL / 1000} seconds.`);
   saveIntervalId = setInterval(saveBatchToDB, DB_SAVE_INTERVAL);
+
+  // --- Start the new 1-minute saver for combined prices ---
+  if (minuteSaveIntervalId) return;
+  console.log(`Starting 1-minute combined price save interval.`);
+  minuteSaveIntervalId = setInterval(saveMinutePrices, 60 * 1000);
 };
 
 const stopDbSaving = async () => {
@@ -135,6 +176,14 @@ const stopDbSaving = async () => {
     console.log('Stopped DB save interval.');
     console.log('Performing final batch save on stop...');
     await saveBatchToDB(); // Attempt final save
+  }
+
+  // --- Stop the new 1-minute saver ---
+  if (minuteSaveIntervalId) {
+    clearInterval(minuteSaveIntervalId);
+    minuteSaveIntervalId = null;
+    console.log('Stopped 1-minute combined price save interval.');
+    await saveMinutePrices(); // Save the last captured prices on stop
   }
 };
 
