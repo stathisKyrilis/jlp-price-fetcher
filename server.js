@@ -8,12 +8,18 @@ import url from 'url';
 import connectDB from './config/db.js';
 import { fetchPriceData, startDbSaving, stopDbSaving } from './services/jupiterFetcher.js';
 import Price from './models/Price.js'; // Import model for API endpoint
-import express from 'express';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 10000; // Use Render's port or default
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000'; // Default for local dev
+
+// --- Define Allowed Origins ---
+const allowedOrigins = [
+    'https://solmate-weld.vercel.app', // Production Frontend
+    'http://localhost:3000',           // Legacy Local Dev
+    'http://localhost:5173'            // Vite Local Dev
+];
+
 const FETCH_INTERVAL = parseInt(process.env.FAST_FETCH_INTERVAL_MS || '1000', 10);
 
 // --- Connect to Database ---
@@ -26,7 +32,15 @@ const server = http.createServer();
 // --- Configure CORS for HTTP Server ---
 // This is crucial for allowing requests from your frontend domain
 const corsMiddleware = cors({
-    origin: FRONTEND_URL, // Allow only your frontend
+    origin: function (origin, callback) {
+        // allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
     methods: ['GET'],    // Allow only GET requests for the API endpoint
 });
 
@@ -216,54 +230,16 @@ server.on('request', (req, res) => {
     }); // End corsMiddleware callback
 });
 
-
-const app = express();
-
-// ... other middleware (app.use(cors()), app.use(express.json()), etc.) ...
-
-// ===> CHECK FOR THIS ROUTE <===
-app.get('/prices/historical', async (req, res) => {
-  try {
-    // Fetch the last N hours of JLP prices from MongoDB
-    // (Adjust the time range and filtering as needed)
-    const hours = 6; // Example: 6 hours
-    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-
-    // Find only JLP prices within the timeframe, sort by timestamp descending
-    const historicalData = await Price.find({
-      symbol: 'JLP', // Make sure you only save JLP if that's intended
-      timestamp: { $gte: since }
-    })
-    .sort({ timestamp: -1 }) // Get latest first if needed, or sort ascending
-    .limit(); // Add a limit just in case
-
-    // Format for the frontend if necessary (or send raw data)
-    // Example formatting (adapt if your frontend expects a different structure):
-    const formattedData = [{
-        symbol: 'JLP',
-        history: historicalData.map(p => ({ timestamp: p.timestamp, price: p.price }))
-    }];
-
-
-    res.json(formattedData); // Send the data back as JSON
-
-  } catch (error) {
-    console.error("Error fetching historical prices:", error);
-    res.status(500).json({ message: "Error fetching historical price data" });
-  }
-});
-// ===> END CHECK <===
-
 // --- Create WebSocket Server (attach to HTTP server) ---
 const wss = new WebSocketServer({ server }); // Attach WS server to the HTTP server
 
-console.log(`WebSocket Server created. Allowing connections from: ${FRONTEND_URL}`);
+console.log(`WebSocket Server created. Allowing connections from: ${allowedOrigins.join(', ')}`);
 
 wss.on('connection', (ws, req) => {
     // --- Verify Origin ---
     // Important security measure for WebSockets
     const origin = req.headers['origin'];
-    if (origin !== FRONTEND_URL) {
+    if (!origin || allowedOrigins.indexOf(origin) === -1) {
         console.warn(`WebSocket connection rejected from invalid origin: ${origin}`);
         ws.close(1008, 'Invalid origin'); // 1008 = Policy Violation
         return;
@@ -358,7 +334,7 @@ const stopFetching = async () => {
 // --- Start the HTTP Server ---
 server.listen(PORT, '0.0.0.0', () => { // Listen on 0.0.0.0 for Render
   console.log(`Server listening on port ${PORT}`);
-  console.log(`Accepting API requests and WebSocket connections from: ${FRONTEND_URL}`);
+  console.log(`Accepting API requests and WebSocket connections from: ${allowedOrigins.join(', ')}`);
   startFetching(); // Start the fetching process once server is listening
 });
 
