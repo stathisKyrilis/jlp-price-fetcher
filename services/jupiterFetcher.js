@@ -1,4 +1,5 @@
 // services/jupiterFetcher.js
+console.log('--- RUNNING LATEST VERSION OF jupiterFetcher.js ---');
 import fetch from 'node-fetch'; // Use import if package.json has "type": "module", otherwise use require('node-fetch')
 import mongoose from 'mongoose'; // Use import if package.json has "type": "module", otherwise use require('mongoose')
 import Price from '../models/Price.js'; // Adjust path if needed
