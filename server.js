@@ -233,93 +233,76 @@ server.on('request', (req, res) => {
 // --- Create WebSocket Server (attach to HTTP server) ---
 const wss = new WebSocketServer({ server }); // Attach WS server to the HTTP server
 
+let fetchTimeoutId = null; // Keep track of the fetcher's timeout
+
 console.log(`WebSocket Server created. Allowing connections from: ${allowedOrigins.join(', ')}`);
 
+// This function will be called inside the connection handler
+const broadcast = (data) => {
+    const jsonData = JSON.stringify(data);
+    wss.clients.forEach((client) => {
+        if (client.readyState === client.OPEN) {
+            client.send(jsonData);
+        }
+    });
+};
+
+const runFetcherLoop = async () => {
+    try {
+        const fetchedPrices = await fetchPriceData();
+        if (fetchedPrices && fetchedPrices.length > 0) {
+            broadcast({ type: 'PRICE_UPDATE', payload: fetchedPrices });
+        }
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error in runFetcherLoop:`, error);
+    } finally {
+        if (fetchTimeoutId) {
+            fetchTimeoutId = setTimeout(runFetcherLoop, FETCH_INTERVAL);
+        }
+    }
+};
+
+const startAllProcesses = () => {
+    if (fetchTimeoutId) return; // Already running
+    console.log(`Starting all processes: Fetching and DB Saving...`);
+    startDbSaving();
+    fetchTimeoutId = setTimeout(runFetcherLoop, 0); // Start the loop immediately
+};
+
+const stopAllProcesses = async () => {
+    if (!fetchTimeoutId) return; // Already stopped
+    console.log('Stopping all processes...');
+    clearTimeout(fetchTimeoutId);
+    fetchTimeoutId = null;
+    await stopDbSaving();
+};
+
 wss.on('connection', (ws, req) => {
-    // --- Verify Origin ---
-    // Important security measure for WebSockets
     const origin = req.headers['origin'];
     if (!origin || allowedOrigins.indexOf(origin) === -1) {
         console.warn(`WebSocket connection rejected from invalid origin: ${origin}`);
-        ws.close(1008, 'Invalid origin'); // 1008 = Policy Violation
+        ws.close(1008, 'Invalid origin');
         return;
     }
     console.log(`[${new Date().toISOString()}] WebSocket client connected. Origin: ${origin}`);
 
-    ws.on('message', (message) => {
-        // Optional: Handle incoming messages from client if needed
-        console.log(`Received message from client: ${message}`);
-    });
+    // If this is the first client, start everything.
+    if (wss.clients.size === 1) {
+        startAllProcesses();
+    }
 
-    ws.on('close', (code, reason) => {
-        console.log(`[${new Date().toISOString()}] WebSocket client disconnected. Code: ${code}, Reason: ${reason}`);
+    ws.on('close', async () => {
+        console.log(`[${new Date().toISOString()}] Client disconnected.`);
+        // If this was the last client, stop everything.
+        if (wss.clients.size === 0) {
+            await stopAllProcesses();
+        }
     });
 
     ws.on('error', (error) => {
         console.error(`[${new Date().toISOString()}] WebSocket error:`, error);
     });
 });
-
-// --- Broadcast Function ---
-// Sends data to all connected WebSocket clients
-function broadcast(data) {
-    const jsonData = JSON.stringify(data);
-    wss.clients.forEach((client) => {
-        if (client.readyState === client.OPEN) {
-            client.send(jsonData, (err) => {
-                if (err) {
-                    console.error(`[${new Date().toISOString()}] Error sending message to client:`, err);
-                }
-            });
-        }
-    });
-}
-
-// --- Orchestrate Fetching and Broadcasting ---
-let fetchTimeoutId = null; // Use a different name to be clear it's for a timeout chain
-
-const runFetcherLoop = async () => {
-  try {
-    const fetchedPrices = await fetchPriceData();
-    if (fetchedPrices && fetchedPrices.length > 0) {
-      broadcast({ type: 'PRICE_UPDATE', payload: fetchedPrices });
-    }
-  } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in runFetcherLoop:`, error);
-  } finally {
-    // Schedule the next run only after the current one has finished
-    if (fetchTimeoutId) { // Ensure the loop is still supposed to be running
-        fetchTimeoutId = setTimeout(runFetcherLoop, FETCH_INTERVAL);
-    }
-  }
-};
-
-const startFetching = () => {
-    if (fetchTimeoutId) return; // Already running
-    console.log(`Starting price fetching & broadcasting every ${FETCH_INTERVAL / 1000} seconds.`);
-    startDbSaving();
-    fetchTimeoutId = setTimeout(runFetcherLoop, 0); // Start the loop immediately
-};
-
-const stopFetching = async () => {
-    if (fetchTimeoutId) {
-        clearTimeout(fetchTimeoutId);
-        fetchTimeoutId = null;
-        console.log('Stopped price fetching & broadcasting.');
-    }
-    await stopDbSaving();
-    // Close WebSocket server connections gracefully
-    console.log('Closing WebSocket connections...');
-    wss.clients.forEach(client => client.close());
-    // server.close handles closing the HTTP server itself which also closes the WSS
-    server.close(() => {
-        console.log('HTTP server closed.');
-    });
-};
-
-// --- START ALL PROCESSES ---
-// This block defines the main loop and starts it immediately.
-startFetching();
 
 // --- Start the HTTP Server ---
 server.listen(PORT, () => {
@@ -329,13 +312,13 @@ server.listen(PORT, () => {
 
 // --- Graceful Shutdown ---
 process.on('SIGINT', async () => {
-  console.log('SIGINT received. Shutting down gracefully...');
-  await stopFetching();
-  process.exit(0);
+    console.log('SIGINT received. Shutting down gracefully...');
+    await stopAllProcesses();
+    process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  await stopFetching();
-  process.exit(0);
+    console.log('SIGTERM received. Shutting down gracefully...');
+    await stopAllProcesses();
+    process.exit(0);
 });
