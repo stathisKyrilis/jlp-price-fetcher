@@ -42,70 +42,90 @@ let latestJlpPrice = null; // Store the latest JLP price
 let latestSolPrice = null; // Store the latest SOL price
 let minuteSaveIntervalId = null; // ID for the new 1-minute interval
 
+// --- Helper for async wait ---
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // --- Functions ---
 
 // Function to fetch price and add to batch
 const fetchPriceData = async () => {
   const currentApiUrl = `${API_URL_BASE}${commaSeparatedIds}`;
-  const fetchedPrices = []; // Store prices fetched in this specific call
+  const fetchedPrices = [];
+  let attempts = 0;
+  const maxAttempts = 5;
 
-  try {
-    const response = await fetch(currentApiUrl, { timeout: 5000 }); // Add timeout
+  while (attempts < maxAttempts) {
+    attempts++;
+    try {
+      const response = await fetch(currentApiUrl, { timeout: 5000 });
 
-    if (!response.ok) {
-      const responseText = await response.text(); // Read body for debugging
-      console.warn(`[${new Date().toISOString()}] API request failed! Status: ${response.status}, URL: ${currentApiUrl}, Body: ${responseText}`);
-      return null; // Indicate fetch failure
-    }
+      if (response.ok) {
+        // SUCCESS: Parse data and exit loop
+        const data = await response.json();
+        const timestamp = new Date();
 
-    const data = await response.json();
-    const timestamp = new Date();
+        for (const symbol in TOKEN_IDS) {
+            const tokenId = TOKEN_IDS[symbol];
+            if (data?.data?.[tokenId]) {
+                const tokenPriceData = data.data[tokenId];
+                const price = Number(tokenPriceData.price);
 
-    for (const symbol in TOKEN_IDS) {
-        const tokenId = TOKEN_IDS[symbol];
-        if (data?.data?.[tokenId]) {
-            const tokenPriceData = data.data[tokenId];
-            const price = Number(tokenPriceData.price);
+                if (!isNaN(price)) {
+                    const priceData = {
+                        symbol: symbol,
+                        price: price,
+                        tokenId: tokenId,
+                        timestamp: timestamp
+                    };
+                    fetchedPrices.push(priceData);
 
-            if (!isNaN(price)) {
-                const priceData = {
-                    symbol: symbol,
-                    price: price,
-                    tokenId: tokenId,
-                    timestamp: timestamp
-                };
-                fetchedPrices.push(priceData);
+                    // Update latest prices for the 1-minute save
+                    if (symbol === 'JLP') {
+                        latestJlpPrice = price;
+                    } else if (symbol === 'SOL') {
+                        latestSolPrice = price;
+                    }
 
-                // Update latest prices for the 1-minute save
-                if (symbol === 'JLP') {
-                    latestJlpPrice = price;
-                } else if (symbol === 'SOL') {
-                    latestSolPrice = price;
-                }
-
-                // Only add JLP prices to the high-frequency batch
-                if (symbol === 'JLP') {
-                  priceBatch.push(priceData);
+                    // Only add JLP prices to the high-frequency batch
+                    if (symbol === 'JLP') {
+                      priceBatch.push(priceData);
+                    }
+                } else {
+                    console.warn(`[${timestamp.toISOString()}] Invalid price for ${symbol} (${tokenId}):`, tokenPriceData.price);
                 }
             } else {
-                console.warn(`[${timestamp.toISOString()}] Invalid price for ${symbol} (${tokenId}):`, tokenPriceData.price);
+                console.warn(`[${timestamp.toISOString()}] Price data for ${symbol} (${tokenId}) not found in API response.`);
             }
-        } else {
-            console.warn(`[${timestamp.toISOString()}] Price data for ${symbol} (${tokenId}) not found in API response.`);
         }
-    }
-    // Return only the prices fetched *this* time
-    return fetchedPrices.length > 0 ? fetchedPrices : null;
+        return fetchedPrices.length > 0 ? fetchedPrices : null; // Success, return data
+      }
 
-  } catch (error) {
-    // Handle fetch-specific errors (e.g., network issues, timeouts)
-    if (error.name === 'AbortError' || error.code === 'ETIMEOUT' || error.code === 'ECONNRESET') {
-        console.warn(`[${new Date().toISOString()}] Fetch timeout or network error for ${currentApiUrl}: ${error.message}`);
-    } else {
-        console.error(`[${new Date().toISOString()}] Error during fetch operation:`, error);
+      // --- HANDLE RETRY-ABLE ERRORS ---
+      if (response.status === 429) {
+        const retryAfter = Math.pow(2, attempts) * 1000; // Exponential backoff (2s, 4s, 8s...)
+        console.warn(`[${new Date().toISOString()}] Rate limit exceeded (429). Retrying in ${retryAfter / 1000}s... (Attempt ${attempts}/${maxAttempts})`);
+        await sleep(retryAfter);
+      } else {
+        // Handle other non-ok statuses that might not be worth retrying
+        const responseText = await response.text();
+        console.error(`[${new Date().toISOString()}] API request failed! Status: ${response.status}, Body: ${responseText}`);
+        return null; // Don't retry on other server errors like 500
+      }
+
+    } catch (error) {
+      if (error.name === 'AbortError' || error.code === 'ETIMEOUT' || error.code === 'ECONNRESET') {
+        const retryAfter = Math.pow(2, attempts) * 1000;
+        console.warn(`[${new Date().toISOString()}] Network error/timeout. Retrying in ${retryAfter / 1000}s... (Attempt ${attempts}/${maxAttempts})`, error.message);
+        await sleep(retryAfter);
+      } else {
+        console.error(`[${new Date().toISOString()}] Unhandled fetch error:`, error);
+        return null; // Don't retry on unknown errors
+      }
     }
-    return null; // Indicate fetch failure
   }
+
+  console.error(`[${new Date().toISOString()}] Fetch failed after ${maxAttempts} attempts. Skipping this fetch cycle.`);
+  return null; // Indicate fetch failure after all retries
 };
 
 // --- NEW: Function to save the latest JLP and SOL prices every minute ---
