@@ -179,17 +179,23 @@ const saveBatchToDB = async () => {
 
 // --- Start/Stop DB Saving Interval ---
 const startDbSaving = () => {
+  console.log('--- DIAGNOSTIC: Entering startDbSaving() ---');
+  console.log(`--- DIAGNOSTIC: Current saveIntervalId: ${saveIntervalId}`);
   // Start the 5-second batch saver if it's not already running
   if (!saveIntervalId) {
+    console.log('--- DIAGNOSTIC: Condition for 5s timer is true. Setting interval. ---');
     console.log(`Starting DB save interval: every ${DB_SAVE_INTERVAL / 1000} seconds.`);
     saveIntervalId = setInterval(saveBatchToDB, DB_SAVE_INTERVAL);
   }
 
+  console.log(`--- DIAGNOSTIC: Current minuteSaveIntervalId: ${minuteSaveIntervalId}`);
   // Start the 1-minute combined price saver if it's not already running
   if (!minuteSaveIntervalId) {
+    console.log('--- DIAGNOSTIC: Condition for 1m timer is true. Setting interval. ---');
     console.log(`Starting 1-minute combined price save interval.`);
     minuteSaveIntervalId = setInterval(saveMinutePrices, 60 * 1000);
   }
+  console.log('--- DIAGNOSTIC: Exiting startDbSaving() ---');
 };
 
 const stopDbSaving = async () => {
