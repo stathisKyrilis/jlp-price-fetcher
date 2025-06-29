@@ -257,10 +257,6 @@ wss.on('connection', (ws, req) => {
 
     ws.on('error', (error) => {
         console.error(`[${new Date().toISOString()}] WebSocket error:`, error);
-        // Ensure connection is closed on error
-        if (ws.readyState === ws.OPEN) {
-            ws.close();
-        }
     });
 });
 
@@ -269,14 +265,10 @@ wss.on('connection', (ws, req) => {
 function broadcast(data) {
     const jsonData = JSON.stringify(data);
     wss.clients.forEach((client) => {
-        if (client.readyState === client.OPEN) { // Check if client is ready
+        if (client.readyState === client.OPEN) {
             client.send(jsonData, (err) => {
                 if (err) {
                     console.error(`[${new Date().toISOString()}] Error sending message to client:`, err);
-                    // Optional: Terminate broken connections
-                    // if (client.readyState !== client.CLOSING && client.readyState !== client.CLOSED) {
-                    //    client.terminate();
-                    // }
                 }
             });
         }
@@ -288,36 +280,25 @@ let fetchIntervalId = null;
 
 const runFetcher = async () => {
   try {
-    const fetchedPrices = await fetchPriceData(); // Get prices from this run
+    const fetchedPrices = await fetchPriceData();
     if (fetchedPrices && fetchedPrices.length > 0) {
-      // Broadcast only the newly fetched prices
       broadcast({ type: 'PRICE_UPDATE', payload: fetchedPrices });
     }
   } catch (error) {
-      // Catch any unexpected error from fetchPriceData itself (should be handled within, but belt-and-suspenders)
       console.error(`[${new Date().toISOString()}] Error in runFetcher loop:`, error);
-  } finally {
-      // Schedule the next fetch regardless of success/failure of the current one
-      if (fetchIntervalId) { // Ensure interval is still supposed to be running
-          // Using setTimeout ensures that fetches happen roughly FETCH_INTERVAL apart,
-          // even if a fetch takes longer than the interval.
-          fetchIntervalId = setTimeout(runFetcher, FETCH_INTERVAL);
-      }
   }
 };
-
 
 const startFetching = () => {
     if (fetchIntervalId) return; // Already running
     console.log(`Starting price fetching & broadcasting every ${FETCH_INTERVAL / 1000} seconds.`);
     startDbSaving(); // Start the separate DB save interval
-    // Use setTimeout chain for fetching to prevent overlapping requests if one takes too long
-    fetchIntervalId = setTimeout(runFetcher, 0); // Start immediately
+    fetchIntervalId = setInterval(runFetcher, FETCH_INTERVAL);
 };
 
 const stopFetching = async () => {
     if (fetchIntervalId) {
-        clearTimeout(fetchIntervalId); // Use clearTimeout for setTimeout chain
+        clearInterval(fetchIntervalId);
         fetchIntervalId = null;
         console.log('Stopped price fetching & broadcasting.');
     }
@@ -331,11 +312,19 @@ const stopFetching = async () => {
     });
 };
 
+// --- START ALL PROCESSES ---
+// This block defines the main loop and starts it immediately.
+(() => {
+    if (fetchIntervalId) return; // Prevent multiple initializations
+    console.log(`Starting price fetching & broadcasting every ${FETCH_INTERVAL / 1000} seconds.`);
+    startDbSaving(); // Start the DB saving intervals
+    fetchIntervalId = setInterval(runFetcher, FETCH_INTERVAL);
+})();
+
 // --- Start the HTTP Server ---
-server.listen(PORT, '0.0.0.0', () => { // Listen on 0.0.0.0 for Render
-  console.log(`Server listening on port ${PORT}`);
-  console.log(`Accepting API requests and WebSocket connections from: ${allowedOrigins.join(', ')}`);
-  startFetching(); // Start the fetching process once server is listening
+server.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+    console.log(`Accepting API requests and WebSocket connections from: ${allowedOrigins.join(', ')}`);
 });
 
 // --- Graceful Shutdown ---
